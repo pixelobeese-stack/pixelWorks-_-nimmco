@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>3D Shader Mixer • Controls Below</title>
+<title>3D Shader Mixer • Pixel Shadow</title>
 <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -20,19 +20,11 @@ body {
   background: white;
   padding:12px 15px;
   display:flex;
-  gap:10px;
+  justify-content: flex-end;
   align-items:center;
   border-bottom:1px solid #ddd;
   flex-wrap:wrap;
   z-index:10;
-}
-.btn {
-  padding:8px 14px;
-  border:1px solid #ccc;
-  border-radius:8px;
-  background:#f8f9fa;
-  cursor:pointer;
-  font-weight: 500;
 }
 .preview-box {
   background:white;
@@ -46,11 +38,10 @@ body {
 canvas {
   display:block;
   margin:0 auto 20px;
-  background:#111;
   border-radius:8px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
   max-width:100%;
   height:auto;
+  background: transparent;
 }
 .controls {
   display:grid;
@@ -84,7 +75,6 @@ canvas {
   border-bottom:1px solid #eee;
 }
 .palette-wrap {
-  margin-left: auto;
   display: flex;
   align-items:center;
   gap: 8px;
@@ -122,6 +112,7 @@ const DOT_RADIUS = 2.5;
 const SPACING = 3.5;
 const CANVAS_SIZE = 700;
 const FOG_COLOR = {r:30, g:30, b:35};
+const GROUND_Y = 25; // Shadow ground plane offset
 
 const MS_PAINT_COLORS = [
   '#000000', '#7f7f7f', '#880015', '#ed1c24', '#ff7f27', '#fff200', '#22b14c', '#00a2e8', '#3f48cc', '#a349a4', '#ffffff', '#c3c3c3', '#b97a57', '#ffaec9',
@@ -161,6 +152,15 @@ const project = (x, y, z, rotX, rotY, rotZ) => {
   px = x3; py = y3;
 
   return { x: px, y: py - pz * 0.4, z: pz };
+};
+
+// Project 3D point onto ground plane along light direction
+const projectShadow = (x,y,z, lx,ly,lz, groundY) => {
+  const dx = x - lx;
+  const dy = y - ly;
+  const dz = z - lz;
+  const t = (groundY - ly) / dy;
+  return { x: lx + dx * t, y: groundY, z: lz + dz * t };
 };
 
 const phongShade = (x,y,z, lx,ly,lz, cx,cy,cz, base, power, inten) => {
@@ -214,6 +214,12 @@ const createSphere = (r=18, c='#00a2e8') => {
   return m;
 };
 
+const updateAllDotsColor = (dots, newColor) => {
+  const updated = new Map();
+  for (const [pos] of dots) updated.set(pos, newColor);
+  return updated;
+};
+
 function App() {
   const [dots, setDots] = useState(()=>createSphere(18,'#00a2e8'));
   const [color, setColor] = useState('#00a2e8');
@@ -229,6 +235,12 @@ function App() {
   const [glassOpacity, setGlassOpacity] = useState(0.0);
   const [glassStrength, setGlassStrength] = useState(0.8);
   const [fogAmount, setFogAmount] = useState(0.35);
+  const [shadowOpacity, setShadowOpacity] = useState(0.55);
+
+  const handleColorChange = (newColor) => {
+    setColor(newColor);
+    setDots(prev => updateAllDotsColor(prev, newColor));
+  };
 
   const canvasRef = useRef(null);
   const cen = GRID/2;
@@ -250,6 +262,28 @@ function App() {
     
     list.sort((a,b)=>a.depth - b.depth);
 
+    // === Step 1: Draw shadow pixels first ===
+    for(const d of list){
+      // Estimate shadow position: project point along light to ground
+      const sp = projectShadow(d.x, d.y, d.z, lightPos.x, lightPos.y, lightPos.z, GROUND_Y);
+      const pSp = project(sp.x, sp.y, sp.z, rotX, rotY, rotZ);
+      
+      // Shadow fade by distance/light height
+      const distFade = clamp(1 - (Math.hypot(d.x-cen,d.z-cen)/GRID), 0.2, 1);
+      const lHeight = clamp(lightPos.z / LAYERS, 0.25, 1);
+      
+      ctx.beginPath();
+      ctx.arc(
+        cx + pSp.x * SPACING, 
+        cy + (pSp.y + 18) * SPACING, // Offset below object
+        DOT_RADIUS * 1.3,
+        0, Math.PI*2
+      );
+      ctx.fillStyle = `rgba(10,10,20,${shadowOpacity * distFade * lHeight})`;
+      ctx.fill();
+    }
+
+    // === Step 2: Draw sphere dots ===
     for(const d of list){
       const p = phongShade(d.x,d.y,d.z,lightPos.x,lightPos.y,lightPos.z,cen,cen,cen,d.baseCol,phongPower,phongInten);
       const b = bulletShade(d.x,d.y,d.z,lightPos.x,lightPos.y,lightPos.z,cen,cen,cen,d.baseCol,roughness);
@@ -270,24 +304,27 @@ function App() {
       ctx.fillStyle = `rgb(${clamp(r,0,255)},${clamp(grn,0,255)},${clamp(bue,0,255)})`;
       ctx.fill();
     }
-  }, [dots,rotX,rotY,rotZ,lightPos,phongPower,phongInten,phongOpacity,bulletOpacity,roughness,glassOpacity,glassStrength,fogAmount]);
+  }, [dots,rotX,rotY,rotZ,lightPos,phongPower,phongInten,phongOpacity,bulletOpacity,roughness,glassOpacity,glassStrength,fogAmount,shadowOpacity,cen]);
 
   return (
     <>
       <div className="top-bar">
-        <button className="btn" onClick={()=>setDots(createSphere(18,color))}>Reset Sphere</button>
         <div className="palette-wrap">
           <div className="palette">{MS_PAINT_COLORS.map(c=>(
-            <button key={c} className={"swatch "+(color===c?'selected':'')} style={{background:c}} onClick={()=>setColor(c)}/>
+            <button 
+              key={c} 
+              className={"swatch "+(color===c?'selected':'')} 
+              style={{background:c}} 
+              onClick={()=>handleColorChange(c)}
+            />
           ))}</div>
         </div>
       </div>
 
       <div className="preview-box">
-        <h3>Full 3D Shader Mixer • NO CULLING • + Fog</h3>
+        <h3>Full 3D Shader Mixer • Pixel Shadow</h3>
         <canvas ref={canvasRef} width={CANVAS_SIZE} height={CANVAS_SIZE}></canvas>
 
-        {/* Controls panel - below viewer */}
         <div className="section-header">🔄 Full 3D Rotation</div>
         <div className="controls">
           <div className="control-item">
@@ -360,8 +397,12 @@ function App() {
           </div>
         </div>
 
-        <div className="section-header">🌫️ Fog (Depth Fade)</div>
+        <div className="section-header">🌫️ Shadow & Fog</div>
         <div className="controls">
+          <div className="control-item">
+            <label>Shadow Opacity: {shadowOpacity.toFixed(2)}</label>
+            <input type="range" min="0" max="0.1" step="0.005" value={shadowOpacity} onChange={e=>setShadowOpacity(+e.target.value)}/>
+          </div>
           <div className="control-item">
             <label>Fog Density: {fogAmount.toFixed(2)}</label>
             <input type="range" min="0" max="1" step="0.05" value={fogAmount} onChange={e=>setFogAmount(+e.target.value)}/>
