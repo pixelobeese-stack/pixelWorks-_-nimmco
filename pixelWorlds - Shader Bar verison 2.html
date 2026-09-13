@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Glass Sphere Caustic</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #E2E4E7;
+            font-family: sans-serif;
+            padding: 80px 10px 20px;
+        }
+        .top-bar {
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            background: white;
+            padding: 12px 15px;
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            border-bottom: 1px solid #ddd;
+            flex-wrap: wrap;
+            z-index: 10;
+        }
+        .preview-box {
+            background: white;
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 15px;
+            max-width: 900px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        canvas {
+            display: block;
+            margin: 0 auto 20px;
+            border-radius: 8px;
+            max-width: 100%;
+            height: auto;
+            background: transparent;
+        }
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+        }
+        .control-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-size: 13px;
+        }
+        .control-item label {
+            font-weight: 500;
+            color: #333;
+            display: flex;
+            justify-content: space-between;
+        }
+        .control-item input[type="range"] {
+            width: 100%;
+            cursor: pointer;
+        }
+        .section-header {
+            margin: 20px 0 10px;
+            font-weight: 600;
+            color: #555;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding-bottom: 4px;
+            border-bottom: 1px solid #eee;
+        }
+        .palette-wrap {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .palette {
+            display: grid;
+            grid-template-columns: repeat(14, 20px);
+            gap: 4px;
+        }
+        .swatch {
+            width: 20px; height: 20px;
+            border-radius: 4px;
+            border: 1px solid rgba(0,0,0,.25);
+            cursor: pointer;
+        }
+        .swatch.selected {
+            outline: 2px solid #000;
+            outline-offset: 1px;
+        }
+        h3 {
+            margin-bottom: 15px;
+            color: #333;
+        }
+        .note {
+            font-size: 11px;
+            color: #888;
+            margin-top: 6px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="top-bar">
+    <div class="palette-wrap">
+        <div class="palette" id="mainPalette"></div>
+    </div>
+</div>
+
+<div class="preview-box">
+    <h3>Full 3D Shader Mixer + Glass Caustic</h3>
+    <canvas id="mainCanvas" width="700" height="700"></canvas>
+
+    <div class="section-header">&#128260; Full 3D Rotation</div>
+    <div class="controls">
+        <div class="control-item">
+            <label>Rotate X: <span id="rotXVal">20</span>°</label>
+            <input type="range" id="rotX" min="0" max="360" value="20">
+        </div>
+        <div class="control-item">
+            <label>Rotate Y: <span id="rotYVal">45</span>°</label>
+            <input type="range" id="rotY" min="0" max="360" value="45">
+        </div>
+        <div class="control-item">
+            <label>Rotate Z: <span id="rotZVal">0</span>°</label>
+            <input type="range" id="rotZ" min="0" max="360" value="0">
+        </div>
+    </div>
+
+    <div class="section-header">&#128161; Light Position (X/Y/Z)</div>
+    <div class="controls">
+        <div class="control-item">
+            <label>Light X: <span id="lightXVal">15</span></label>
+            <input type="range" id="lightX" min="0" max="64" value="15">
+        </div>
+        <div class="control-item">
+            <label>Light Y: <span id="lightYVal">15</span></label>
+            <input type="range" id="lightY" min="0" max="64" value="15">
+        </div>
+        <div class="control-item">
+            <label>Light Z: <span id="lightZVal">20</span></label>
+            <input type="range" id="lightZ" min="0" max="63" value="20">
+        </div>
+    </div>
+
+    <div class="section-header">&#10024; Phong Specular (Base)</div>
+    <div class="controls">
+        <div class="control-item">
+            <label>Sharpness: <span id="phongPowerVal">160</span></label>
+            <input type="range" id="phongPower" min="40" max="300" value="160">
+        </div>
+        <div class="control-item">
+            <label>Brightness: <span id="phongIntenVal">1.60</span></label>
+            <input type="range" id="phongInten" min="0" max="3" step="0.1" value="1.6">
+        </div>
+        <div class="control-item">
+            <label>Opacity: <span id="phongOpacityVal">1.00</span></label>
+            <input type="range" id="phongOpacity" min="0" max="1" step="0.05" value="1.0">
+        </div>
+    </div>
+
+    <div class="section-header">&#128297; Bullet / Metal Layer</div>
+    <div class="controls">
+        <div class="control-item">
+            <label>Opacity: <span id="bulletOpacityVal">0.00</span></label>
+            <input type="range" id="bulletOpacity" min="0" max="1" step="0.05" value="0">
+        </div>
+        <div class="control-item">
+            <label>Roughness: <span id="roughnessVal">0.25</span></label>
+            <input type="range" id="roughness" min="0" max="0.6" step="0.01" value="0.25">
+        </div>
+    </div>
+
+    <div class="section-header">&#128269; Glass / Fresnel Layer</div>
+    <div class="controls">
+        <div class="control-item">
+            <label>Opacity: <span id="glassOpacityVal">0.00</span></label>
+            <input type="range" id="glassOpacity" min="0" max="1" step="0.05" value="0">
+        </div>
+        <div class="control-item">
+            <label>Strength: <span id="glassStrengthVal">0.80</span></label>
+            <input type="range" id="glassStrength" min="0" max="1.5" step="0.05" value="0.8">
+        </div>
+    </div>
+    <div class="note">Increase Glass Opacity to activate circular caustic effect in shadow</div>
+
+    <div class="section-header">&#127787;&#65039; Shadow & Fog</div>
+    <div class="controls">
+        <div class="control-item">
+            <label>Shadow Opacity: <span id="shadowOpacityVal">0.02</span></label>
+            <input type="range" id="shadowOpacity" min="0" max="1" step="0.05" value="0.02">
+        </div>
+        <div class="control-item">
+            <label>Fog Density: <span id="fogAmountVal">0.35</span></label>
+            <input type="range" id="fogAmount" min="0" max="1" step="0.05" value="0.35">
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    var GRID = 64, LAYERS = 64, DOT_RADIUS = 2.5, SPACING = 3.5;
+    var CANVAS_SIZE = 700, GROUND_Y = 25;
+    var FOG_COLOR = {r:30, g:30, b:35};
+    var CEN = GRID / 2, MAX_DEPTH = GRID;
+
+    var MS_PAINT_COLORS = [
+        '#000000', '#7f7f7f', '#880015', '#ed1c24', '#ff7f27', '#fff200', '#22b14c', '#00a2e8', '#3f48cc', '#a349a4', '#ffffff', '#c3c3c3', '#b97a57', '#ffaec9',
+        '#404040', '#b5b5b5', '#b97a57', '#f4cccc', '#ffc90e', '#efe4b0', '#b5e61d', '#99d9ea', '#7092be', '#c8bfe7', '#e5e5e5', '#d9d2e9', '#ead1dc', '#fce5cd'
+    ];
+
+    function brightenHex(hex, amount) {
+        amount = amount || 0.7;
+        var c = hex.replace('#','');
+        var r = parseInt(c.slice(0,2),16);
+        var g = parseInt(c.slice(2,4),16);
+        var b = parseInt(c.slice(4,6),16);
+        r = Math.min(255, Math.round(r + (255 - r) * amount));
+        g = Math.min(255, Math.round(g + (255 - g) * amount));
+        b = Math.min(255, Math.round(b + (255 - b) * amount));
+        return {r: r, g: g, b: b};
+    }
+
+    function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+    function hexToRgb(h) {
+        var s = h.replace('#','');
+        return {
+            r: parseInt(s.slice(0,2),16) || 0,
+            g: parseInt(s.slice(2,4),16) || 0,
+            b: parseInt(s.slice(4,6),16) || 0
+        };
+    }
+    function normalize(v) {
+        var l = Math.hypot(v.x, v.y, v.z) || 1;
+        return {x: v.x/l, y: v.y/l, z: v.z/l};
+    }
+    function dot(a, b) { return a.x*b.x + a.y*b.y + a.z*b.z; }
+
+    function project(x, y, z, rotX, rotY, rotZ) {
+        var px = x - CEN, py = y - CEN, pz = z - CEN;
+        var rx = rotX * Math.PI / 180;
+        var y1 = py * Math.cos(rx) - pz * Math.sin(rx);
+        var z1 = py * Math.sin(rx) + pz * Math.cos(rx);
+        py = y1; pz = z1;
+        var ry = rotY * Math.PI / 180;
+        var x2 = px * Math.cos(ry) + pz * Math.sin(ry);
+        var z2 = -px * Math.sin(ry) + pz * Math.cos(ry);
+        px = x2; pz = z2;
+        var rz = rotZ * Math.PI / 180;
+        var x3 = px * Math.cos(rz) - py * Math.sin(rz);
+        var y3 = px * Math.sin(rz) + py * Math.cos(rz);
+        px = x3; py = y3;
+        return { x: px, y: py - pz * 0.4, z: pz };
+    }
+
+    function projectShadow(x, y, z, lx, ly, lz, groundY) {
+        var dx = x - lx, dy = y - ly, dz = z - lz;
+        var t = (groundY - ly) / dy;
+        return { x: lx + dx * t, y: groundY, z: lz + dz * t };
+    }
+
+    function sphereNormal(x, y, z) {
+        return normalize({ x: x - CEN, y: y - CEN, z: z - CEN });
+    }
+
+    function refractCausticIntensity(x, y, z, lx, ly, lz, time) {
+        var n = sphereNormal(x, y, z);
+        var L = normalize({ x: lx - x, y: ly - y, z: lz - z });
+
+        var cosTheta = dot(n, L);
+        if (cosTheta <= 0) return 0;
+
+        var ior = 1.45;
+        var eta = 1 / ior;
+        var k = 1 - eta * eta * (1 - cosTheta * cosTheta);
+        if (k < 0) return 0;
+
+        var refract = normalize({
+            x: eta * L.x - (eta * cosTheta + Math.sqrt(k)) * n.x,
+            y: eta * L.y - (eta * cosTheta + Math.sqrt(k)) * n.y,
+            z: eta * L.z - (eta * cosTheta + Math.sqrt(k)) * n.z
+        });
+
+        var toCenter = normalize({ x: CEN - x, y: CEN - y, z: CEN - z });
+        var alignment = Math.max(0, dot(refract, toCenter));
+
+        var radius = Math.hypot(x - CEN, z - CEN);
+        var edgeFactor = Math.exp(-Math.pow((radius - 14) / 3.5, 2));
+
+        var wobble = 1 + Math.sin(time * 0.003 + y * 0.3) * 0.15;
+
+        return clamp(alignment * edgeFactor * wobble, 0, 1);
+    }
+
+    function causticRing(shadowX, shadowZ, lx, ly, lz, time) {
+        var toLightX = lx - CEN;
+        var toLightZ = lz - CEN;
+        var toLightLen = Math.hypot(toLightX, toLightZ) || 1;
+        toLightX /= toLightLen;
+        toLightZ /= toLightLen;
+
+        var relX = shadowX - CEN;
+        var relZ = shadowZ - CEN;
+
+        var projOnAxis = relX * toLightX + relZ * toLightZ;
+        if (projOnAxis > 2) return 0;
+
+        var perpX = relX - projOnAxis * toLightX;
+        var perpZ = relZ - projOnAxis * toLightZ;
+        var perpDist = Math.hypot(perpX, perpZ);
+
+        var focalRadius = 10 + Math.sin(time * 0.0005) * 1.5;
+        var radiusDelta = perpDist - focalRadius;
+        var ringIntensity = Math.exp(-(radiusDelta * radiusDelta) / 12);
+
+        var focalDepth = -12;
+        var depthDelta = projOnAxis - focalDepth;
+        var depthIntensity = Math.exp(-(depthDelta * depthDelta) / 40);
+
+        var oppositeBoost = projOnAxis < 0 ? Math.exp(projOnAxis * 0.08) : 0;
+        var intensity = ringIntensity * depthIntensity * oppositeBoost * 1.5;
+
+        var innerRadius = 4;
+        var innerDelta = perpDist - innerRadius;
+        var innerRing = Math.exp(-(innerDelta * innerDelta) / 4) * depthIntensity * oppositeBoost * 0.6;
+
+        return clamp(intensity + innerRing, 0, 1);
+    }
+
+    function phongShade(x, y, z, lx, ly, lz, cx, cy, cz, base, power, inten) {
+        var n = normalize({x: x-cx, y: y-cy, z: z-cz});
+        var l = normalize({x: lx-x, y: ly-y, z: lz-z});
+        var v = normalize({x: cx-x, y: cy-y, z: 80-z});
+        var h = normalize({x: l.x+v.x, y: l.y+v.y, z: l.z+v.z});
+        var diff = Math.max(0.15, Math.abs(dot(n, l)));
+        var spec = Math.pow(Math.max(0, dot(n, h)), power);
+        if (spec < 0.1) spec = 0;
+        var c = hexToRgb(base);
+        return {
+            r: clamp(c.r*diff + 255*spec*inten, 0, 255),
+            g: clamp(c.g*diff + 255*spec*inten, 0, 255),
+            b: clamp(c.b*diff + 255*spec*inten, 0, 255)
+        };
+    }
+
+    function bulletShade(x, y, z, lx, ly, lz, cx, cy, cz, base, rough) {
+        var n = normalize({x: x-cx, y: y-cy, z: z-cz});
+        var l = normalize({x: lx-x, y: ly-y, z: lz-z});
+        var v = normalize({x: cx-x, y: cy-y, z: 80-z});
+        var h = normalize({x: l.x+v.x, y: l.y+v.y, z: l.z+v.z});
+        var diff = Math.max(0.1, Math.abs(dot(n, l))) * (1 - rough);
+        var spec = Math.pow(Math.max(0, dot(n, h)), Math.max(10, 90/(rough+0.15)));
+        var c = hexToRgb(base);
+        return {
+            r: clamp(c.r*diff + 220*spec, 0, 255),
+            g: clamp(c.g*diff + 215*spec, 0, 255),
+            b: clamp(c.b*diff + 210*spec, 0, 255)
+        };
+    }
+
+    function glassShade(x, y, z, lx, ly, lz, cx, cy, cz, base, strength) {
+        var n = normalize({x: x-cx, y: y-cy, z: z-cz});
+        var v = normalize({x: cx-x, y: cy-y, z: 80-z});
+        var fres = Math.pow(1 - Math.max(0, Math.abs(dot(n, v))), 3.5);
+        var c = hexToRgb(base);
+        return {
+            r: clamp(c.r*0.55 + fres*130*strength, 0, 255),
+            g: clamp(c.g*0.55 + fres*150*strength, 0, 255),
+            b: clamp(c.b*0.65 + fres*170*strength, 0, 255)
+        };
+    }
+
+    function createSphere(r, color) {
+        r = r || 18;
+        color = color || '#00a2e8';
+        var dots = [];
+        for (var x = 0; x < GRID; x++) {
+            for (var y = 0; y < GRID; y++) {
+                for (var z = 0; z < LAYERS; z++) {
+                    if ((x-CEN)*(x-CEN) + (y-CEN)*(y-CEN) + (z-CEN)*(z-CEN) <= r*r) {
+                        dots.push({x: x, y: y, z: z, color: color});
+                    }
+                }
+            }
+        }
+        return dots;
+    }
+
+    function updateAllDotsColor(dots, newColor) {
+        for (var i = 0; i < dots.length; i++) {
+            dots[i].color = newColor;
+        }
+        return dots;
+    }
+
+    var state = {
+        dots: createSphere(18, '#00a2e8'),
+        color: '#00a2e8',
+        rotX: 20, rotY: 45, rotZ: 0,
+        lightPos: {x: 15, y: 15, z: 20},
+        phongPower: 160, phongInten: 1.6, phongOpacity: 1.0,
+        bulletOpacity: 0.0, roughness: 0.25,
+        glassOpacity: 0.0, glassStrength: 0.8,
+        fogAmount: 0.35, shadowOpacity: 0.02
+    };
+
+    var time = 0;
+    var canvas = document.getElementById('mainCanvas');
+    var ctx = canvas.getContext('2d');
+    var cx = CANVAS_SIZE / 2, cy = CANVAS_SIZE / 2;
+
+    var mainPalette = document.getElementById('mainPalette');
+    MS_PAINT_COLORS.forEach(function(c) {
+        var btn = document.createElement('button');
+        btn.className = 'swatch' + (state.color === c ? ' selected' : '');
+        btn.style.background = c;
+        btn.onclick = function() {
+            state.color = c;
+            updateAllDotsColor(state.dots, c);
+            var swatches = mainPalette.querySelectorAll('.swatch');
+            for (var i = 0; i < swatches.length; i++) swatches[i].classList.remove('selected');
+            btn.classList.add('selected');
+        };
+        mainPalette.appendChild(btn);
+    });
+
+    function bindSlider(id, valId, prop, formatter) {
+        var el = document.getElementById(id);
+        var valEl = document.getElementById(valId);
+        el.addEventListener('input', function() {
+            var v = parseFloat(el.value);
+            state[prop] = v;
+            valEl.textContent = formatter ? formatter(v) : v;
+        });
+    }
+
+    function bindSliderVec(id, valId, prop, formatter) {
+        var el = document.getElementById(id);
+        var valEl = document.getElementById(valId);
+        el.addEventListener('input', function() {
+            var v = parseFloat(el.value);
+            state.lightPos[prop] = v;
+            valEl.textContent = formatter ? formatter(v) : v;
+        });
+    }
+
+    bindSlider('rotX', 'rotXVal', 'rotX');
+    bindSlider('rotY', 'rotYVal', 'rotY');
+    bindSlider('rotZ', 'rotZVal', 'rotZ');
+    bindSliderVec('lightX', 'lightXVal', 'x');
+    bindSliderVec('lightY', 'lightYVal', 'y');
+    bindSliderVec('lightZ', 'lightZVal', 'z');
+    bindSlider('phongPower', 'phongPowerVal', 'phongPower');
+    bindSlider('phongInten', 'phongIntenVal', 'phongInten', function(v){return v.toFixed(2);});
+    bindSlider('phongOpacity', 'phongOpacityVal', 'phongOpacity', function(v){return v.toFixed(2);});
+    bindSlider('bulletOpacity', 'bulletOpacityVal', 'bulletOpacity', function(v){return v.toFixed(2);});
+    bindSlider('roughness', 'roughnessVal', 'roughness', function(v){return v.toFixed(2);});
+    bindSlider('glassOpacity', 'glassOpacityVal', 'glassOpacity', function(v){return v.toFixed(2);});
+    bindSlider('glassStrength', 'glassStrengthVal', 'glassStrength', function(v){return v.toFixed(2);});
+    bindSlider('shadowOpacity', 'shadowOpacityVal', 'shadowOpacity', function(v){return v.toFixed(2);});
+    bindSlider('fogAmount', 'fogAmountVal', 'fogAmount', function(v){return v.toFixed(2);});
+
+    function render() {
+        time += 16;
+        ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+        var list = [];
+        var dots = state.dots;
+        for (var i = 0; i < dots.length; i++) {
+            var d = dots[i];
+            var p = project(d.x, d.y, d.z, state.rotX, state.rotY, state.rotZ);
+            list.push({
+                x: d.x, y: d.y, z: d.z,
+                color: d.color,
+                px: p.x, py: p.y, pz: p.z,
+                depth: p.z
+            });
+        }
+
+        list.sort(function(a, b) { return a.depth - b.depth; });
+
+        var lx = state.lightPos.x, ly = state.lightPos.y, lz = state.lightPos.z;
+        var causticRgb = brightenHex(state.color, 0.7);
+
+        for (var si = 0; si < list.length; si++) {
+            var sd = list[si];
+            var sp = projectShadow(sd.x, sd.y, sd.z, lx, ly, lz, GROUND_Y);
+            var pSp = project(sp.x, sp.y, sp.z, state.rotX, state.rotY, state.rotZ);
+
+            var distFade = clamp(1 - (Math.hypot(sd.x - CEN, sd.z - CEN) / GRID), 0.2, 1);
+            var lHeight = clamp(lz / LAYERS, 0.25, 1);
+
+            var sx = cx + pSp.x * SPACING;
+            var sy = cy + (pSp.y + 18) * SPACING;
+
+            ctx.beginPath();
+            ctx.arc(sx, sy, DOT_RADIUS * 1.3, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(10,10,20,' + (state.shadowOpacity * distFade * lHeight) + ')';
+            ctx.fill();
+
+            if (state.glassOpacity > 0.01) {
+                var refract = refractCausticIntensity(sd.x, sd.y, sd.z, lx, ly, lz, time);
+                var ring = causticRing(sp.x, sp.z, lx, ly, lz, time);
+                var caust = Math.max(refract, ring);
+
+                if (caust > 0.05) {
+                    var caustAlpha = caust * state.glassOpacity * distFade * lHeight * 1.2;
+                    ctx.beginPath();
+                    ctx.arc(sx, sy, DOT_RADIUS * 1.2 * (0.5 + caust * 0.8), 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(' + causticRgb.r + ',' + causticRgb.g + ',' + causticRgb.b + ',' + (caustAlpha * 0.9) + ')';
+                    ctx.fill();
+                    if (caust > 0.3) {
+                        ctx.beginPath();
+                        ctx.arc(sx, sy, DOT_RADIUS * 2.0 * caust, 0, Math.PI * 2);
+                        ctx.fillStyle = 'rgba(' + causticRgb.r + ',' + causticRgb.g + ',' + causticRgb.b + ',' + (caustAlpha * 0.3) + ')';
+                        ctx.fill();
+                    }
+                }
+            }
+        }
+
+        for (var di = 0; di < list.length; di++) {
+            var dot = list[di];
+            var p = phongShade(dot.x, dot.y, dot.z, lx, ly, lz, CEN, CEN, CEN, dot.color, state.phongPower, state.phongInten);
+            var b = bulletShade(dot.x, dot.y, dot.z, lx, ly, lz, CEN, CEN, CEN, dot.color, state.roughness);
+            var g = glassShade(dot.x, dot.y, dot.z, lx, ly, lz, CEN, CEN, CEN, dot.color, state.glassStrength);
+
+            var r = p.r * state.phongOpacity + b.r * state.bulletOpacity + g.r * state.glassOpacity;
+            var grn = p.g * state.phongOpacity + b.g * state.bulletOpacity + g.g * state.glassOpacity;
+            var bue = p.b * state.phongOpacity + b.b * state.bulletOpacity + g.b * state.glassOpacity;
+
+            var depthFactor = (dot.depth + MAX_DEPTH / 2) / MAX_DEPTH;
+            var fogFactor = depthFactor * state.fogAmount;
+            r = r * (1 - fogFactor) + FOG_COLOR.r * fogFactor;
+            grn = grn * (1 - fogFactor) + FOG_COLOR.g * fogFactor;
+            bue = bue * (1 - fogFactor) + FOG_COLOR.b * fogFactor;
+
+            ctx.beginPath();
+            ctx.arc(cx + dot.px * SPACING, cy + dot.py * SPACING, DOT_RADIUS, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgb(' + clamp(r,0,255) + ',' + clamp(grn,0,255) + ',' + clamp(bue,0,255) + ')';
+            ctx.fill();
+        }
+
+        requestAnimationFrame(render);
+    }
+
+    requestAnimationFrame(render);
+})();
+</script>
+
+</body>
+</html>
