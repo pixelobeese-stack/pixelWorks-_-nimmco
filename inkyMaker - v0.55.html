@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>inkyMaker</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#fff;color:#000;font-family:monospace,sans-serif;font-weight:300;padding:8px;-webkit-text-size-adjust:100%}
+canvas{display:block;width:100%;max-width:700px;height:auto;background:transparent;margin-bottom:8px}
+.controls{max-width:700px}
+.section{margin-bottom:6px}
+.title{font-size:11px;font-weight:500;text-transform:lowercase;margin-bottom:3px;padding-bottom:2px;border-bottom:1px solid #000;cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between}
+.title .arrow{font-size:10px;transition:transform .15s}
+.title.collapsed .arrow{transform:rotate(-90deg)}
+.title.collapsed + .section-body{display:none}
+.row{display:flex;align-items:center;gap:4px;margin-bottom:2px;font-size:10px;font-weight:300}
+.row label{width:62px;flex-shrink:0;font-weight:300}
+.row input[type="range"]{flex:1;height:16px}
+.row input[type="color"]{width:24px;height:16px;border:1px solid #000;background:none;cursor:pointer;padding:0}
+.row select{flex:1;font-family:monospace,sans-serif;font-size:10px;font-weight:300;padding:1px 2px}
+.row input[type="checkbox"]{cursor:pointer;width:12px;height:12px}
+.row button{font-family:monospace,sans-serif;font-size:10px;font-weight:300;border:1px solid #000;background:#fff;color:#000;cursor:pointer;padding:1px 6px}
+.row button:hover{background:#000;color:#fff}
+.val{width:32px;text-align:right;font-size:9px;font-weight:300}
+.palette{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px}
+.swatch{
+  width:18px;
+  height:18px;
+  border:1px solid #000;
+  cursor:pointer;
+  border-radius:50%;
+  transition:transform .1s
+}
+.swatch:hover{transform:scale(1.1)}
+.swatch.selected{
+  outline:2px solid #000;
+  outline-offset:1px;
+  transform:scale(1.15)
+}
+.note{font-size:9px;color:#666;margin-top:2px;font-weight:300}
+.light-block{border:1px solid #ddd;padding:4px;margin-bottom:4px}
+.light-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;font-size:10px;font-weight:500}
+.light-header label{display:flex;align-items:center;gap:3px;cursor:pointer;font-weight:500;width:auto}
+.light-grid{display:grid;grid-template-columns:1fr 1fr;gap:2px 8px}
+.light-grid .row label{width:44px}
+@media(max-width:420px){
+  .light-grid{grid-template-columns:1fr}
+  .row label{width:54px}
+}
+</style>
+</head>
+<body>
+
+<canvas id="mainCanvas" width="700" height="700"></canvas>
+<div class="controls">
+
+  <div class="section">
+    <div class="title" data-target="sec-shape">shape <span class="arrow">&#9662;</span></div>
+    <div class="section-body" id="sec-shape">
+      <div class="row">
+        <label>form</label>
+        <select id="shapeSelect">
+          <option value="sphere">sphere</option>
+          <option value="cube">cube</option>
+          <option value="torus">torus</option>
+          <option value="cone">cone</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="title" data-target="sec-texture">texture map <span class="arrow">&#9662;</span></div>
+    <div class="section-body" id="sec-texture">
+      <div class="row">
+        <label>image</label>
+        <input type="file" id="texInput" accept="image/png, image/jpeg" style="flex:1;font-family:monospace,sans-serif;font-size:10px;font-weight:300">
+        <button id="texClear">clear</button>
+      </div>
+      <div class="note">png / jpg — auto uv-mapped per shape</div>
+      <div class="note" id="texInfo"></div>
+    </div>
+  </div>
+
+  <div class="palette" id="mainPalette"></div>
+
+  <div class="section">
+    <div class="title" data-target="sec-voxel">overall voxel <span class="arrow">&#9662;</span></div>
+    <div class="section-body" id="sec-voxel">
+      <div class="row"><label>opacity</label><input type="range" id="voxelOpacity" min="0" max="1" step="0.05" value="1.0"><span class="val" id="voxelOpacityVal">1.00</span></div>
+      <div class="note">master transparency — voxels only</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="title" data-target="sec-lights">area lights <span class="arrow">&#9662;</span></div>
+    <div class="section-body" id="sec-lights">
+      <div class="row"><label>samples</label>
+        <select id="sampleRes">
+          <option value="1">1 x 1 (point)</option>
+          <option value="2" selected>2 x 2</option>
+          <option value="3">3 x 3</option>
+          <option value="4">4 x 4</option>
+        </select>
+      </div>
+      <div class="note">higher = softer shadows, slower render</div>
+      <div id="lightsContainer"></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="title collapsed" data-target="sec-phong">phong <span class="arrow">&#9662;</span></div>
+    <div class="section-body" id="sec-phong" style="display:none">
+      <div class="row"><label>sharpness</label><input type="range" id="phongPower" min="40" max="300" value="160"><span class="val" id="phongPowerVal">160</span></div>
+      <div class="row"><label>brightness</label><input type="range" id="phongInten" min="0" max="3" step="0.1" value="1.6"><span class="val" id="phongIntenVal">1.60</span></div>
+      <div class="row"><label>opacity</label><input type="range" id="phongOpacity" min="0" max="1" step="0.05" value="1.0"><span class="val" id="phongOpacityVal">1.00</span></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="title collapsed" data-target="sec-metal">metal <span class="arrow">&#9662;</span></div>
+    <div class="section-body" id="sec-metal" style="display:none">
+      <div class="row"><label>opacity</label><input type="range" id="bulletOpacity" min="0" max="1" step="0.05" value="0"><span class="val" id="bulletOpacityVal">0.00</span></div>
+      <div class="row"><label>roughness</label><input type="range" id="roughness" min="0" max="0.6" step="0.01" value="0.25"><span class="val" id="roughnessVal">0.25</span></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="title collapsed" data-target="sec-glass">glass <span class="arrow">&#9662;</span></div>
+    <div class="section-body" id="sec-glass" style="display:none">
+      <div class="row"><label>opacity</label><input type="range" id="glassOpacity" min="0" max="1" step="0.05" value="0"><span class="val" id="glassOpacityVal">0.00</span></div>
+      <div class="row"><label>strength</label><input type="range" id="glassStrength" min="0" max="1.5" step="0.05" value="0.8"><span class="val" id="glassStrengthVal">0.80</span></div>
+      <div class="note">increase opacity for caustic</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="title collapsed" data-target="sec-fog">shadow fog <span class="arrow">&#9662;</span></div>
+    <div class="section-body" id="sec-fog" style="display:none">
+      <div class="row"><label>fog</label><input type="range" id="fogAmount" min="0" max="1" step="0.05" value="0.35"><span class="val" id="fogAmountVal">0.35</span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+const GRID=64,LAYERS=64,DOT_RADIUS=2.5,SPACING=3.5;
+const CANVAS_SIZE=700,GROUND_Y=25,CEN=GRID/2,MAX_DEPTH=GRID;
+const FOG_COLOR={r:30,g:30,b:35};
+const MS_PAINT_COLORS=[
+  '#000000','#7F7F7F','#880015','#ED1C24','#FF7F27','#FFF200','#22B14C','#00A2E8','#3F48CC','#A349A4',
+  '#FFFFFF','#C3C3C3','#B97A57','#FFAEC9','#404040','#B5B5B5','#B97A57','#F4CCCC','#FFC90E','#EFE4B0',
+  '#B5E61D','#99D9EA','#7092BE','#C8BFE7','#E5E5E5','#D9D2E9','#EAD1DC','#FCE5CD'
+];
+
+const brightenHex=(h,a=.7)=>{
+  const c=h.replace('#','');
+  const r=parseInt(c.slice(0,2),16),g=parseInt(c.slice(2,4),16),b=parseInt(c.slice(4,6),16);
+  return {
+    r:Math.min(255,Math.round(r+(255-r)*a)),
+    g:Math.min(255,Math.round(g+(255-g)*a)),
+    b:Math.min(255,Math.round(b+(255-b)*a))
+  };
+};
+const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
+const hexToRgb=h=>{
+  const s=h.replace('#','');
+  if(s.length===3){
+    return {
+      r:parseInt(s[0]+s[0],16)||0,
+      g:parseInt(s[1]+s[1],16)||0,
+      b:parseInt(s[2]+s[2],16)||0
+    };
+  }
+  return {
+    r:parseInt(s.slice(0,2),16)||0,
+    g:parseInt(s.slice(2,4),16)||0,
+    b:parseInt(s.slice(4,6),16)||0
+  };
+};
+const normalize=v=>{const l=Math.hypot(v.x,v.y,v.z)||1;return{x:v.x/l,y:v.y/l,z:v.z/l}};
+const dot=(a,b)=>a.x*b.x+a.y*b.y+a.z*b.z;
+const TAU=Math.PI*2;
+
+const project=(x,y,z,rotX,rotY,rotZ)=>{
+  let px=x-CEN,py=y-CEN,pz=z-CEN;
+  const rx=rotX*Math.PI/180,y1=py*Math.cos(rx)-pz*Math.sin(rx),z1=py*Math.sin(rx)+pz*Math.cos(rx);
+  py=y1;pz=z1;
+  const ry=rotY*Math.PI/180,x2=px*Math.cos(ry)+pz*Math.sin(ry),z2=-px*Math.sin(ry)+pz*Math.cos(ry);
+  px=x2;pz=z2;
+  const rz=rotZ*Math.PI/180,x3=px*Math.cos(rz)-py*Math.sin(rz),y3=px*Math.sin(rz)+py*Math.cos(rz);
+  return{x:x3,y:y3-pz*.4,z:pz};
+};
+
+const projectShadow=(x,y,z,lx,ly,lz,gy)=>{
+  const dy=y-ly;
+  if(Math.abs(dy)<0.001) return null;
+  const t=(gy-ly)/dy;
+  if(t<=0) return null;
+  if(t>50) return null;
+  const dx=x-lx,dz=z-lz;
+  const sx=lx+dx*t, sz=lz+dz*t;
+  if(Math.abs(sx-CEN)>GRID*3||Math.abs(sz-CEN)>GRID*3) return null;
+  return{x:sx,y:gy,z:sz};
+};
+
+const sphereNormal=(s,t,u)=>normalize({x:s,y:t,z:u});
+
+const cubeNormal=(s,t,u,half)=>{
+  const ax=Math.abs(s)-half, ay=Math.abs(t)-half, az=Math.abs(u)-half;
+  if(ax>0||ay>0||az>0){
+    const dx=Math.max(ax,0)*Math.sign(s||1);
+    const dy=Math.max(ay,0)*Math.sign(t||1);
+    const dz=Math.max(az,0)*Math.sign(u||1);
+    return normalize({x:dx,y:dy,z:dz});
+  }
+  if(ax>=ay && ax>=az) return {x:Math.sign(s||1),y:0,z:0};
+  if(ay>=ax && ay>=az) return {x:0,y:Math.sign(t||1),z:0};
+  return {x:0,y:0,z:Math.sign(u||1)};
+};
+
+const torusNormal=(s,t,u,R,r)=>{
+  const rad=Math.hypot(s,u)||1e-6;
+  const qx=rad-R, qy=t, ql=Math.hypot(qx,qy)||1e-6;
+  const nx2=qx/ql, ny2=qy/ql;
+  const rx=s/rad, rz=u/rad;
+  return normalize({x:rx*nx2, y:ny2, z:rz*nx2});
+};
+
+const coneNormal=(s,t,u,R0,H)=>{
+  const halfH=H/2, k=R0/H;
+  const rad=Math.hypot(s,u)||1e-6;
+  const sideVal=rad-k*(halfH-t);
+  const baseVal=(-halfH)-t;
+  if(baseVal>sideVal) return {x:0,y:-1,z:0};
+  return normalize({x:s/rad, y:k, z:u/rad});
+};
+
+/* --- texture sampling + per-shape UV mappers --- */
+
+const sampleTexture=(u,v)=>{
+  const tex=state.texture;
+  if(!tex) return state.color;
+  u=((u%1)+1)%1; v=((v%1)+1)%1;
+  const x=Math.min(tex.w-1,Math.floor(u*tex.w));
+  const y=Math.min(tex.h-1,Math.floor(v*tex.h));
+  const i=(y*tex.w+x)*4;
+  const to2=n=>('0'+n.toString(16)).slice(-2);
+  return '#'+to2(tex.data[i])+to2(tex.data[i+1])+to2(tex.data[i+2]);
+};
+
+/* each returns {u,v} in 0..1 for local coords s,t,u (relative to shape center) */
+const UV_MAPPERS={
+  sphere:(s,t,u)=>({
+    u:.5+Math.atan2(u,s)/TAU,
+    v:.5-Math.asin(clamp(t/18,-1,1))/Math.PI
+  }),
+  cube:(s,t,u)=>{
+    const h=14,ax=Math.abs(s),ay=Math.abs(t),az=Math.abs(u);
+    if(ax>=ay&&ax>=az){           // +x / -x faces
+      const uu=(t+h)/(2*h),vv=(u+h)/(2*h);
+      return {u:s>0?uu:1-uu,v:vv};
+    }
+    if(ay>=ax&&ay>=az){           // +y / -y faces
+      const uu=(s+h)/(2*h),vv=(u+h)/(2*h);
+      return {u:uu,v:t>0?vv:1-vv};
+    }
+    const uu=(s+h)/(2*h),vv=(t+h)/(2*h);  // +z / -z faces
+    return {u:u>0?uu:1-uu,v:vv};
+  },
+  torus:(s,t,u)=>{
+    const R=13,rad=Math.hypot(s,u);
+    return {
+      u:Math.atan2(u,s)/TAU,
+      v:.5+Math.atan2(t,rad-R)/TAU
+    };
+  },
+  cone:(s,t,u)=>{
+    const H=34,halfH=H/2;
+    return {
+      u:Math.atan2(u,s)/TAU,
+      v:(halfH-t)/H
+    };
+  }
+};
+
+/* shape makers now take a color provider fn instead of a single color */
+const createSphere=(r,getColor)=>{
+  const d=[];
+  for(let x=0;x<GRID;x++)for(let y=0;y<GRID;y++)for(let z=0;z<LAYERS;z++){
+    const s=x-CEN,t=y-CEN,u=z-CEN;
+    if(s*s+t*t+u*u<=r*r){
+      const n=sphereNormal(s,t,u);
+      d.push({x,y,z,color:getColor(s,t,u),nx:n.x,ny:n.y,nz:n.z});
+    }
+  }
+  return d;
+};
+
+const createCube=(half,getColor)=>{
+  const d=[];
+  for(let x=0;x<GRID;x++)for(let y=0;y<GRID;y++)for(let z=0;z<LAYERS;z++){
+    const s=x-CEN,t=y-CEN,u=z-CEN;
+    if(Math.abs(s)<=half&&Math.abs(t)<=half&&Math.abs(u)<=half){
+      const n=cubeNormal(s,t,u,half);
+      d.push({x,y,z,color:getColor(s,t,u),nx:n.x,ny:n.y,nz:n.z});
+    }
+  }
+  return d;
+};
+
+const createTorus=(R,r,getColor)=>{
+  const d=[];
+  for(let x=0;x<GRID;x++)for(let y=0;y<GRID;y++)for(let z=0;z<LAYERS;z++){
+    const s=x-CEN,t=y-CEN,u=z-CEN;
+    const rad=Math.hypot(s,u);
+    const qx=rad-R;
+    if(qx*qx+t*t<=r*r){
+      const n=torusNormal(s,t,u,R,r);
+      d.push({x,y,z,color:getColor(s,t,u),nx:n.x,ny:n.y,nz:n.z});
+    }
+  }
+  return d;
+};
+
+const createCone=(R0,H,getColor)=>{
+  const halfH=H/2,k=R0/H;
+  const d=[];
+  for(let x=0;x<GRID;x++)for(let y=0;y<GRID;y++)for(let z=0;z<LAYERS;z++){
+    const s=x-CEN,t=y-CEN,u=z-CEN;
+    if(t<-halfH||t>halfH) continue;
+    const Rt=k*(halfH-t);
+    if(Math.hypot(s,u)<=Rt){
+      const n=coneNormal(s,t,u,R0,H);
+      d.push({x,y,z,color:getColor(s,t,u),nx:n.x,ny:n.y,nz:n.z});
+    }
+  }
+  return d;
+};
+
+const SHAPES={
+  sphere:{make:getC=>createSphere(18,getC),radius:18},
+  cube:{make:getC=>createCube(14,getC),radius:14*Math.sqrt(3)},
+  torus:{make:getC=>createTorus(13,6,getC),radius:19},
+  cone:{make:getC=>createCone(16,34,getC),radius:16}
+};
+
+const rebuildShape=()=>{
+  const def=SHAPES[state.shape];
+  let getC;
+  if(state.texture){
+    const uv=UV_MAPPERS[state.shape];
+    getC=(s,t,u)=>{const p=uv(s,t,u);return sampleTexture(p.u,p.v)};
+  }else{
+    getC=()=>state.color;
+  }
+  state.dots=def.make(getC);
+  state.shapeRadius=def.radius;
+};
+
+const getAreaLightSamples=(light,res)=>{
+  const samples=[];
+  const stepX=light.sizeX/res, stepZ=light.sizeZ/res;
+  const startX=light.x-light.sizeX/2+stepX/2;
+  const startZ=light.z-light.sizeZ/2+stepZ/2;
+  for(let i=0;i<res;i++){
+    for(let j=0;j<res;j++){
+      samples.push({x:startX+i*stepX,y:light.y,z:startZ+j*stepZ});
+    }
+  }
+  return samples;
+};
+
+const refractCaustic=(d,lx,ly,lz,time)=>{
+  const n={x:d.nx,y:d.ny,z:d.nz};
+  const L=normalize({x:lx-d.x,y:ly-d.y,z:lz-d.z});
+  const cosT=dot(n,L);
+  if(cosT<=0)return 0;
+  const eta=1/1.45,k=1-eta*eta*(1-cosT*cosT);
+  if(k<0)return 0;
+  const refr=normalize({
+    x:eta*L.x-(eta*cosT+Math.sqrt(k))*n.x,
+    y:eta*L.y-(eta*cosT+Math.sqrt(k))*n.y,
+    z:eta*L.z-(eta*cosT+Math.sqrt(k))*n.z
+  });
+  const align=Math.max(0,dot(refr,normalize({x:CEN-d.x,y:CEN-d.y,z:CEN-d.z})));
+  const edge=Math.exp(-Math.pow((Math.hypot(d.x-CEN,d.z-CEN)-state.shapeRadius*.78)/3.5,2));
+  return clamp(align*edge*(1+Math.sin(time*.003+d.y*.3)*.15),0,1);
+};
+
+const causticRing=(sx,sz,lx,ly,lz,time)=>{
+  const lx2=lx-CEN,lz2=lz-CEN,ll=Math.hypot(lx2,lz2)||1,plx=lx2/ll,plz=lz2/ll;
+  const rx=sx-CEN,rz=sz-CEN,proj=rx*plx+rz*plz;
+  if(proj>2)return 0;
+  const px=rx-proj*plx,pz=rz-proj*plz,pd=Math.hypot(px,pz);
+  const fr=state.shapeRadius*.55+Math.sin(time*.0005)*1.5,rd=pd-fr,ri=Math.exp(-(rd*rd)/12);
+  const dd=proj+12,di=Math.exp(-(dd*dd)/40),ob=proj<0?Math.exp(proj*.08):0;
+  const ir=pd-4,ir2=Math.exp(-(ir*ir)/4)*di*ob*.6;
+  return clamp(ri*di*ob*1.5+ir2,0,1);
+};
+
+const phongSample=(d,lx,ly,lz,lcol,linten,base,pow,inten)=>{
+  const n={x:d.nx,y:d.ny,z:d.nz};
+  const l=normalize({x:lx-d.x,y:ly-d.y,z:lz-d.z});
+  const v=normalize({x:CEN-d.x,y:CEN-d.y,z:80-d.z});
+  const h=normalize({x:l.x+v.x,y:l.y+v.y,z:l.z+v.z});
+  const diff=Math.max(.15,Math.max(0,dot(n,l))),spec=Math.pow(Math.max(0,dot(n,h)),pow);
+  const c=hexToRgb(base);
+  return{
+    r:clamp((c.r*diff+255*spec*inten)*lcol.r*linten/255,0,255),
+    g:clamp((c.g*diff+255*spec*inten)*lcol.g*linten/255,0,255),
+    b:clamp((c.b*diff+255*spec*inten)*lcol.b*linten/255,0,255)
+  };
+};
+
+const metalSample=(d,lx,ly,lz,lcol,linten,base,rough)=>{
+  const n={x:d.nx,y:d.ny,z:d.nz};
+  const l=normalize({x:lx-d.x,y:ly-d.y,z:lz-d.z});
+  const v=normalize({x:CEN-d.x,y:CEN-d.y,z:80-d.z});
+  const h=normalize({x:l.x+v.x,y:l.y+v.y,z:l.z+v.z});
+  const diff=Math.max(.1,Math.max(0,dot(n,l)))*(1-rough),spec=Math.pow(Math.max(0,dot(n,h)),Math.max(10,90/(rough+.15)));
+  const c=hexToRgb(base);
+  return{
+    r:clamp((c.r*diff+220*spec)*lcol.r*linten/255,0,255),
+    g:clamp((c.g*diff+215*spec)*lcol.g*linten/255,0,255),
+    b:clamp((c.b*diff+210*spec)*lcol.b*linten/255,0,255)
+  };
+};
+
+const glassSample=(d,lx,ly,lz,lcol,linten,base,str)=>{
+  const n={x:d.nx,y:d.ny,z:d.nz};
+  const v=normalize({x:CEN-d.x,y:CEN-d.y,z:80-d.z});
+  const fres=Math.pow(1-Math.max(0,Math.abs(dot(n,v))),3.5);
+  const c=hexToRgb(base);
+  const bright=Math.max(lcol.r,lcol.g,lcol.b)/255;
+  return{
+    r:clamp(c.r*.55+fres*130*str*bright*lcol.r/255,0,255),
+    g:clamp(c.g*.55+fres*150*str*bright*lcol.g/255,0,255),
+    b:clamp(c.b*.65+fres*170*str*bright*lcol.b/255,0,255)
+  };
+};
+
+const shadeMultiLight=(d,shaderFn,...args)=>{
+  let tr=0,tg=0,tb=0,totalW=0;
+  const res=state.sampleRes;
+  for(const light of state.lights){
+    if(!light.enabled) continue;
+    const samples=getAreaLightSamples(light,res);
+    const lcol=hexToRgb(light.color);
+    const w=1/(samples.length);
+    for(const s of samples){
+      const col=shaderFn(d,s.x,s.y,s.z,lcol,light.intensity,...args);
+      tr+=col.r*w; tg+=col.g*w; tb+=col.b*w;
+      totalW+=w;
+    }
+  }
+  const norm=totalW>0?1:0;
+  return{r:tr*norm,g:tg*norm,b:tb*norm};
+};
+
+const state={
+  shape:'sphere',
+  dots:[],
+  shapeRadius:SHAPES.sphere.radius,
+  color:'#FFFFFF',
+  texture:null,
+  rotX:192,rotY:85,rotZ:360,
+  sampleRes:2,
+  voxelOpacity:1.0,
+  phongPower:160,phongInten:1.6,phongOpacity:1,
+  bulletOpacity:0,roughness:.25,
+  glassOpacity:0,glassStrength:.8,
+  fogAmount:.35,shadowOpacity:.008,
+  lights:[
+    {enabled:true, x:1,  y:19, z:27, sizeX:8, sizeZ:8, color:'#FFFFFF', intensity:1.0},
+    {enabled:false,x:-25,y:22, z:10, sizeX:10,sizeZ:10,color:'#ff7f27', intensity:0.7},
+    {enabled:false,x:20, y:25, z:-15,sizeX:12,sizeZ:12,color:'#00a2e8', intensity:0.6}
+  ]
+};
+state.dots=SHAPES.sphere.make(()=>state.color);
+
+document.querySelectorAll('.title[data-target]').forEach(title=>{
+  title.addEventListener('click',()=>{
+    const target=document.getElementById(title.dataset.target);
+    if(!target) return;
+    const collapsed=title.classList.toggle('collapsed');
+    target.style.display=collapsed?'none':'';
+  });
+});
+
+const lightsContainer=document.getElementById('lightsContainer');
+
+function buildLightUI(){
+  lightsContainer.innerHTML='';
+  state.lights.forEach((light,i)=>{
+    const block=document.createElement('div');
+    block.className='light-block';
+    block.innerHTML=`
+      <div class="light-header">
+        <label><input type="checkbox" class="light-enable" data-i="${i}" ${light.enabled?'checked':''}> L${i+1}</label>
+        <input type="color" class="light-color" data-i="${i}" value="${light.color}">
+      </div>
+      <div class="light-grid">
+        <div class="row"><label>pos X</label><input type="range" class="light-x" data-i="${i}" min="-40" max="40" step="1" value="${light.x}"><span class="val light-xv" data-i="${i}">${light.x}</span></div>
+        <div class="row"><label>pos Y</label><input type="range" class="light-y" data-i="${i}" min="5" max="50" step="1" value="${light.y}"><span class="val light-yv" data-i="${i}">${light.y}</span></div>
+        <div class="row"><label>pos Z</label><input type="range" class="light-z" data-i="${i}" min="-40" max="40" step="1" value="${light.z}"><span class="val light-zv" data-i="${i}">${light.z}</span></div>
+        <div class="row"><label>intens</label><input type="range" class="light-inten" data-i="${i}" min="0" max="2" step="0.05" value="${light.intensity}"><span class="val light-intenv" data-i="${i}">${light.intensity.toFixed(2)}</span></div>
+        <div class="row"><label>size X</label><input type="range" class="light-sx" data-i="${i}" min="0" max="30" step="0.5" value="${light.sizeX}"><span class="val light-sxv" data-i="${i}">${light.sizeX.toFixed(1)}</span></div>
+        <div class="row"><label>size Z</label><input type="range" class="light-sz" data-i="${i}" min="0" max="30" step="0.5" value="${light.sizeZ}"><span class="val light-szv" data-i="${i}">${light.sizeZ.toFixed(1)}</span></div>
+      </div>
+    `;
+    lightsContainer.appendChild(block);
+  });
+
+  lightsContainer.querySelectorAll('.light-enable').forEach(el=>{
+    el.addEventListener('change',()=>{state.lights[+el.dataset.i].enabled=el.checked});
+  });
+  lightsContainer.querySelectorAll('.light-color').forEach(el=>{
+    el.addEventListener('input',()=>{state.lights[+el.dataset.i].color=el.value});
+  });
+  const bindLight=(cls,prop,fmt)=>{
+    lightsContainer.querySelectorAll(cls).forEach(el=>{
+      el.addEventListener('input',()=>{
+        const idx=+el.dataset.i,v=+el.value;
+        state.lights[idx][prop]=v;
+        const disp=lightsContainer.querySelector(cls.replace('.','.')+'v[data-i="'+idx+'"]');
+        if(disp) disp.textContent=fmt?fmt(v):v;
+      });
+    });
+  };
+  bindLight('.light-x','x');
+  bindLight('.light-y','y');
+  bindLight('.light-z','z');
+  bindLight('.light-inten','intensity',v=>v.toFixed(2));
+  bindLight('.light-sx','sizeX',v=>v.toFixed(1));
+  bindLight('.light-sz','sizeZ',v=>v.toFixed(1));
+}
+
+let time=0;
+const canvas=document.getElementById('mainCanvas'),ctx=canvas.getContext('2d');
+const cx=CANVAS_SIZE/2,cy=CANVAS_SIZE/2;
+const palette=document.getElementById('mainPalette');
+
+MS_PAINT_COLORS.forEach(c=>{
+  const b=document.createElement('button');
+  b.className='swatch'+(state.color===c?' selected':'');
+  b.style.background=c;
+  if(c.toUpperCase()==='#FFFFFF'){
+    b.style.boxShadow='inset 0 0 0 1px #ccc';
+  }
+  b.onclick=()=>{
+    state.color=c;
+    state.texture=null;
+    texInput.value='';
+    texInfo.textContent='';
+    rebuildShape();
+    palette.querySelectorAll('.swatch').forEach(s=>s.classList.remove('selected'));
+    b.classList.add('selected');
+  };
+  palette.appendChild(b);
+});
+
+const shapeSelect=document.getElementById('shapeSelect');
+shapeSelect.value=state.shape;
+shapeSelect.addEventListener('change',()=>{
+  state.shape=shapeSelect.value;
+  rebuildShape();
+});
+
+/* --- texture upload --- */
+const texInput=document.getElementById('texInput');
+const texInfo=document.getElementById('texInfo');
+document.getElementById('texClear').addEventListener('click',()=>{
+  state.texture=null;
+  texInput.value='';
+  texInfo.textContent='';
+  rebuildShape();
+});
+texInput.addEventListener('change',e=>{
+  const f=e.target.files[0];
+  if(!f) return;
+  const img=new Image();
+  img.onload=()=>{
+    const off=document.createElement('canvas');
+    off.width=img.width; off.height=img.height;
+    const oc=off.getContext('2d');
+    oc.drawImage(img,0,0);
+    state.texture={
+      w:img.width,
+      h:img.height,
+      data:oc.getImageData(0,0,img.width,img.height).data
+    };
+    texInfo.textContent='loaded '+img.width+' x '+img.height+' — mapped to '+state.shape;
+    rebuildShape();
+  };
+  img.src=URL.createObjectURL(f);
+});
+
+document.getElementById('sampleRes').addEventListener('change',e=>{
+  state.sampleRes=+e.target.value;
+});
+
+const bind=(id,vid,prop,fmt)=>{
+  const el=document.getElementById(id),vel=document.getElementById(vid);
+  el.addEventListener('input',()=>{const v=+el.value;state[prop]=v;vel.textContent=fmt?fmt(v):v});
+};
+bind('voxelOpacity','voxelOpacityVal','voxelOpacity',v=>v.toFixed(2));
+bind('phongPower','phongPowerVal','phongPower');
+bind('phongInten','phongIntenVal','phongInten',v=>v.toFixed(2));
+bind('phongOpacity','phongOpacityVal','phongOpacity',v=>v.toFixed(2));
+bind('bulletOpacity','bulletOpacityVal','bulletOpacity',v=>v.toFixed(2));
+bind('roughness','roughnessVal','roughness',v=>v.toFixed(2));
+bind('glassOpacity','glassOpacityVal','glassOpacity',v=>v.toFixed(2));
+bind('glassStrength','glassStrengthVal','glassStrength',v=>v.toFixed(2));
+bind('fogAmount','fogAmountVal','fogAmount',v=>v.toFixed(2));
+
+buildLightUI();
+
+const render=()=>{
+  time+=16;
+  ctx.clearRect(0,0,CANVAS_SIZE,CANVAS_SIZE);
+  const list=state.dots.map(d=>{
+    const p=project(d.x,d.y,d.z,state.rotX,state.rotY,state.rotZ);
+    return{...d,px:p.x,py:p.y,pz:p.z,depth:p.z};
+  }).sort((a,b)=>a.depth-b.depth);
+
+  const res=state.sampleRes;
+  const caustCol=state.texture?{r:255,g:255,b:255}:brightenHex(state.color,.7);
+
+  for(const d of list){
+    const fade=clamp(1-Math.hypot(d.x-CEN,d.z-CEN)/GRID,.2,1);
+    for(const light of state.lights){
+      if(!light.enabled) continue;
+      const samples=getAreaLightSamples(light,res);
+      const lcol=hexToRgb(light.color);
+      const bright=Math.max(lcol.r,lcol.g,lcol.b)/255;
+      const shadowAlpha=state.shadowOpacity*light.intensity*bright;
+      for(const s of samples){
+        const sh=projectShadow(d.x,d.y,d.z,s.x,s.y,s.z,GROUND_Y);
+        if(!sh) continue;
+        const lh=clamp(s.z/LAYERS,.25,1);
+        const psh=project(sh.x,sh.y,sh.z,state.rotX,state.rotY,state.rotZ);
+        const sx=cx+psh.x*SPACING,sy=cy+(psh.y+18)*SPACING;
+        const sr=clamp(10+(lcol.r-128)*0.05,0,40);
+        const sg=clamp(10+(lcol.g-128)*0.05,0,40);
+        const sb=clamp(20+(lcol.b-128)*0.05,0,50);
+        ctx.beginPath();ctx.arc(sx,sy,DOT_RADIUS*1.3,0,Math.PI*2);
+        ctx.fillStyle=`rgba(${sr},${sg},${sb},${shadowAlpha*fade*lh})`;ctx.fill();
+        if(state.glassOpacity>.01){
+          const c=Math.max(refractCaustic(d,s.x,s.y,s.z,time),causticRing(sh.x,sh.z,s.x,s.y,s.z,time));
+          if(c>.05){
+            const ca=c*state.glassOpacity*fade*lh*1.2*light.intensity*bright;
+            ctx.beginPath();ctx.arc(sx,sy,DOT_RADIUS*1.2*(.5+c*.8),0,Math.PI*2);
+            ctx.fillStyle=`rgba(${caustCol.r},${caustCol.g},${caustCol.b},${ca*.9})`;ctx.fill();
+            if(c>.3){ctx.beginPath();ctx.arc(sx,sy,DOT_RADIUS*2*c,0,Math.PI*2);ctx.fillStyle=`rgba(${caustCol.r},${caustCol.g},${caustCol.b},${ca*.3})`;ctx.fill();}
+          }
+        }
+      }
+    }
+  }
+
+  for(const d of list){
+    const p=shadeMultiLight(d,phongSample,d.color,state.phongPower,state.phongInten);
+    const m=shadeMultiLight(d,metalSample,d.color,state.roughness);
+    const g=shadeMultiLight(d,glassSample,d.color,state.glassStrength);
+    let r=p.r*state.phongOpacity+m.r*state.bulletOpacity+g.r*state.glassOpacity;
+    let gr=p.g*state.phongOpacity+m.g*state.bulletOpacity+g.g*state.glassOpacity;
+    let b=p.b*state.phongOpacity+m.b*state.bulletOpacity+g.b*state.glassOpacity;
+    const df=(d.depth+MAX_DEPTH/2)/MAX_DEPTH,ff=df*state.fogAmount;
+    r=r*(1-ff)+FOG_COLOR.r*ff;gr=gr*(1-ff)+FOG_COLOR.g*ff;b=b*(1-ff)+FOG_COLOR.b*ff;
+    ctx.beginPath();ctx.arc(cx+d.px*SPACING,cy+d.py*SPACING,DOT_RADIUS,0,Math.PI*2);
+    ctx.fillStyle=`rgba(${clamp(r,0,255)},${clamp(gr,0,255)},${clamp(b,0,255)},${state.voxelOpacity})`;ctx.fill();
+  }
+  requestAnimationFrame(render);
+};
+requestAnimationFrame(render);
+})();
+</script>
+</body>
+</html>
