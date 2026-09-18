@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>3D Shapes — Multi Area Lights</title>
+<title>inkyMaker</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#fff;color:#000;font-family:monospace,sans-serif;font-weight:300;padding:8px;-webkit-text-size-adjust:100%}
@@ -21,9 +21,21 @@ canvas{display:block;width:100%;max-width:700px;height:auto;background:transpare
 .row select{flex:1;font-family:monospace,sans-serif;font-size:10px;font-weight:300;padding:1px 2px}
 .row input[type="checkbox"]{cursor:pointer;width:12px;height:12px}
 .val{width:32px;text-align:right;font-size:9px;font-weight:300}
-.palette{display:flex;gap:3px;flex-wrap:wrap;margin-bottom:8px}
-.swatch{width:14px;height:14px;border:1px solid #000;cursor:pointer}
-.swatch.selected{outline:1px solid #000;outline-offset:1px}
+.palette{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px}
+.swatch{
+  width:18px;
+  height:18px;
+  border:1px solid #000;
+  cursor:pointer;
+  border-radius:50%;
+  transition:transform .1s
+}
+.swatch:hover{transform:scale(1.1)}
+.swatch.selected{
+  outline:2px solid #000;
+  outline-offset:1px;
+  transform:scale(1.15)
+}
 .note{font-size:9px;color:#666;margin-top:2px;font-weight:300}
 .light-block{border:1px solid #ddd;padding:4px;margin-bottom:4px}
 .light-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;font-size:10px;font-weight:500}
@@ -121,15 +133,39 @@ canvas{display:block;width:100%;max-width:700px;height:auto;background:transpare
 const GRID=64,LAYERS=64,DOT_RADIUS=2.5,SPACING=3.5;
 const CANVAS_SIZE=700,GROUND_Y=25,CEN=GRID/2,MAX_DEPTH=GRID;
 const FOG_COLOR={r:30,g:30,b:35};
-const MS_PAINT_COLORS=['#000','#7f7f7f','#880015','#ed1c24','#ff7f27','#fff200','#22b14c','#00a2e8','#3f48cc','#a349a4','#fff','#c3c3c3','#b97a57','#ffaec9','#404040','#b5b5b5','#b97a57','#f4cccc','#ffc90e','#efe4b0','#b5e61d','#99d9ea','#7092be','#c8bfe7','#e5e5e5','#d9d2e9','#ead1dc','#fce5cd'];
+// Fixed palette — #ffffff pure white, no issues
+const MS_PAINT_COLORS=[
+  '#000000','#7F7F7F','#880015','#ED1C24','#FF7F27','#FFF200','#22B14C','#00A2E8','#3F48CC','#A349A4',
+  '#FFFFFF','#C3C3C3','#B97A57','#FFAEC9','#404040','#B5B5B5','#B97A57','#F4CCCC','#FFC90E','#EFE4B0',
+  '#B5E61D','#99D9EA','#7092BE','#C8BFE7','#E5E5E5','#D9D2E9','#EAD1DC','#FCE5CD'
+];
 
 const brightenHex=(h,a=.7)=>{
   const c=h.replace('#','');
   const r=parseInt(c.slice(0,2),16),g=parseInt(c.slice(2,4),16),b=parseInt(c.slice(4,6),16);
-  return {r:Math.min(255,Math.round(r+(255-r)*a)),g:Math.min(255,Math.round(g+(255-g)*a)),b:Math.min(255,Math.round(b+(255-b)*a))};
+  return {
+    r:Math.min(255,Math.round(r+(255-r)*a)),
+    g:Math.min(255,Math.round(g+(255-g)*a)),
+    b:Math.min(255,Math.round(b+(255-b)*a))
+  };
 };
 const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
-const hexToRgb=h=>{const s=h.replace('#','');return{r:parseInt(s.slice(0,2),16)||0,g:parseInt(s.slice(2,4),16)||0,b:parseInt(s.slice(4,6),16)||0}};
+const hexToRgb=h=>{
+  const s=h.replace('#','');
+  // Proper 6-digit parsing — handles #fff or #ffffff reliably
+  if(s.length===3){
+    return {
+      r:parseInt(s[0]+s[0],16)||0,
+      g:parseInt(s[1]+s[1],16)||0,
+      b:parseInt(s[2]+s[2],16)||0
+    };
+  }
+  return {
+    r:parseInt(s.slice(0,2),16)||0,
+    g:parseInt(s.slice(2,4),16)||0,
+    b:parseInt(s.slice(4,6),16)||0
+  };
+};
 const normalize=v=>{const l=Math.hypot(v.x,v.y,v.z)||1;return{x:v.x/l,y:v.y/l,z:v.z/l}};
 const dot=(a,b)=>a.x*b.x+a.y*b.y+a.z*b.z;
 
@@ -143,22 +179,17 @@ const project=(x,y,z,rotX,rotY,rotZ)=>{
   return{x:x3,y:y3-pz*.4,z:pz};
 };
 
-// Project shadow from light through voxel onto ground plane y=gy.
-// Returns null for invalid projections (behind light, parallel, or way off-screen).
 const projectShadow=(x,y,z,lx,ly,lz,gy)=>{
-  const dy=y-ly;               // voxel y relative to light
-  if(Math.abs(dy)<0.001) return null;  // ray parallel to ground plane
-  const t=(gy-ly)/dy;          // ray parameter to ground plane
-  if(t<=0) return null;        // intersection behind the light source
-  if(t>50) return null;        // unreasonably far projection
+  const dy=y-ly;
+  if(Math.abs(dy)<0.001) return null;
+  const t=(gy-ly)/dy;
+  if(t<=0) return null;
+  if(t>50) return null;
   const dx=x-lx,dz=z-lz;
   const sx=lx+dx*t, sz=lz+dz*t;
-  // Sanity bounds on the ground plane
   if(Math.abs(sx-CEN)>GRID*3||Math.abs(sz-CEN)>GRID*3) return null;
   return{x:sx,y:gy,z:sz};
 };
-
-/* ===================== per-shape analytic surface normals ===================== */
 
 const sphereNormal=(s,t,u)=>normalize({x:s,y:t,z:u});
 
@@ -191,8 +222,6 @@ const coneNormal=(s,t,u,R0,H)=>{
   if(baseVal>sideVal) return {x:0,y:-1,z:0};
   return normalize({x:s/rad, y:k, z:u/rad});
 };
-
-/* ===================== shape generators ===================== */
 
 const createSphere=(r=18,color)=>{
   const d=[];
@@ -254,8 +283,6 @@ const SHAPES={
   cone:{make:c=>createCone(16,34,c),radius:16}
 };
 
-/* ===================== area light sampling ===================== */
-
 const getAreaLightSamples=(light,res)=>{
   const samples=[];
   const stepX=light.sizeX/res, stepZ=light.sizeZ/res;
@@ -269,8 +296,6 @@ const getAreaLightSamples=(light,res)=>{
   return samples;
 };
 
-/* ===================== shading ===================== */
-
 const refractCaustic=(d,lx,ly,lz,time)=>{
   const n={x:d.nx,y:d.ny,z:d.nz};
   const L=normalize({x:lx-d.x,y:ly-d.y,z:lz-d.z});
@@ -278,7 +303,11 @@ const refractCaustic=(d,lx,ly,lz,time)=>{
   if(cosT<=0)return 0;
   const eta=1/1.45,k=1-eta*eta*(1-cosT*cosT);
   if(k<0)return 0;
-  const refr=normalize({x:eta*L.x-(eta*cosT+Math.sqrt(k))*n.x,y:eta*L.y-(eta*cosT+Math.sqrt(k))*n.y,z:eta*L.z-(eta*cosT+Math.sqrt(k))*n.z});
+  const refr=normalize({
+    x:eta*L.x-(eta*cosT+Math.sqrt(k))*n.x,
+    y:eta*L.y-(eta*cosT+Math.sqrt(k))*n.y,
+    z:eta*L.z-(eta*cosT+Math.sqrt(k))*n.z
+  });
   const align=Math.max(0,dot(refr,normalize({x:CEN-d.x,y:CEN-d.y,z:CEN-d.z})));
   const edge=Math.exp(-Math.pow((Math.hypot(d.x-CEN,d.z-CEN)-state.shapeRadius*.78)/3.5,2));
   return clamp(align*edge*(1+Math.sin(time*.003+d.y*.3)*.15),0,1);
@@ -354,13 +383,11 @@ const shadeMultiLight=(d,shaderFn,...args)=>{
   return{r:tr*norm,g:tg*norm,b:tb*norm};
 };
 
-/* ===================== state / app ===================== */
-
 const state={
   shape:'sphere',
-  dots:SHAPES.sphere.make('#00a2e8'),
+  dots:SHAPES.sphere.make('#FFFFFF'),
   shapeRadius:SHAPES.sphere.radius,
-  color:'#00a2e8',
+  color:'#FFFFFF',
   rotX:192,rotY:85,rotZ:360,
   sampleRes:2,
   voxelOpacity:1.0,
@@ -369,13 +396,11 @@ const state={
   glassOpacity:0,glassStrength:.8,
   fogAmount:.35,shadowOpacity:.008,
   lights:[
-    {enabled:true, x:1,  y:19, z:27, sizeX:8, sizeZ:8, color:'#ffffff', intensity:1.0},
+    {enabled:true, x:1,  y:19, z:27, sizeX:8, sizeZ:8, color:'#FFFFFF', intensity:1.0},
     {enabled:false,x:-25,y:22, z:10, sizeX:10,sizeZ:10,color:'#ff7f27', intensity:0.7},
     {enabled:false,x:20, y:25, z:-15,sizeX:12,sizeZ:12,color:'#00a2e8', intensity:0.6}
   ]
 };
-
-/* ===================== collapsible sections ===================== */
 
 document.querySelectorAll('.title[data-target]').forEach(title=>{
   title.addEventListener('click',()=>{
@@ -385,8 +410,6 @@ document.querySelectorAll('.title[data-target]').forEach(title=>{
     target.style.display=collapsed?'none':'';
   });
 });
-
-/* ===================== light UI builder ===================== */
 
 const lightsContainer=document.getElementById('lightsContainer');
 
@@ -445,6 +468,10 @@ MS_PAINT_COLORS.forEach(c=>{
   const b=document.createElement('button');
   b.className='swatch'+(state.color===c?' selected':'');
   b.style.background=c;
+  // Fix for white swatch — add border so it's visible
+  if(c.toUpperCase()==='#FFFFFF'){
+    b.style.boxShadow='inset 0 0 0 1px #ccc';
+  }
   b.onclick=()=>{
     state.color=c;
     state.dots.forEach(d=>d.color=c);
@@ -496,7 +523,6 @@ const render=()=>{
   const res=state.sampleRes;
   const caustCol=brightenHex(state.color,.7);
 
-  // --- Shadows & caustics (multi-light, area-sampled) ---
   for(const d of list){
     const fade=clamp(1-Math.hypot(d.x-CEN,d.z-CEN)/GRID,.2,1);
     for(const light of state.lights){
@@ -529,7 +555,6 @@ const render=()=>{
     }
   }
 
-  // --- Voxels (multi-light accumulation) ---
   for(const d of list){
     const p=shadeMultiLight(d,phongSample,d.color,state.phongPower,state.phongInten);
     const m=shadeMultiLight(d,metalSample,d.color,state.roughness);
